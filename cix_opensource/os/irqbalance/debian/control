@@ -1,0 +1,40 @@
+Source: irqbalance
+Section: utils
+Priority: optional
+Maintainer: Paride Legovini <paride@debian.org>
+Build-Depends:
+ debhelper-compat (= 13),
+ dh-exec,
+ dh-runit (>= 2.8.3),
+ libcap-ng-dev,
+ libglib2.0-dev,
+ libncurses5-dev,
+ libnuma-dev,
+ libsystemd-dev,
+ pkg-config,
+Standards-Version: 4.6.1
+Vcs-Git: https://salsa.debian.org/debian/irqbalance.git
+Vcs-Browser: https://salsa.debian.org/debian/irqbalance
+Homepage: https://github.com/Irqbalance/irqbalance
+Rules-Requires-Root: no
+
+Package: irqbalance
+Architecture: linux-any
+Provides:
+ irqbalance (= 1.9.2-1)
+Pre-Depends:
+ ${misc:Pre-Depends},
+Depends:
+ ${misc:Depends},
+ ${shlibs:Depends},
+Breaks:
+ ${runit:Breaks},
+Conflicts:
+ ${runit:Conflicts},
+Description: Daemon to balance interrupts for SMP systems
+ Daemon to balance interrupts across multiple CPUs, which can lead to better
+ performance and IO balance on SMP systems. This package is especially useful
+ on systems with multi-core processors, as interrupts will typically only be
+ serviced by the first core.
+ .
+ Note: irqbalance is not useful if you don't have more than one CPU core.

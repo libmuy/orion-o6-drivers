@@ -1,0 +1,356 @@
+From f82590eacc8dd158097925fc68ec1ffb057dc598 Mon Sep 17 00:00:00 2001
+From: Zhan Lou <zhan.lou@cixtech.com>
+Date: Tue, 15 Oct 2024 16:04:11 +0800
+Subject: [PATCH 04/14] gpu: vulkan: support disjoint planes
+
+Buffers from video decoder usually have disjoint planes. To support
+rendering such buffer using vulkan, add InitializeDisjointPlanes() and
+call into this path if not single plane (fd) image.
+
+Signed-off-by: Zhan Lou <zhan.lou@cixtech.com>
+---
+ gpu/vulkan/vulkan_image.cc       | 161 ++++++++++++++++++++++---------
+ gpu/vulkan/vulkan_image.h        |  16 ++-
+ gpu/vulkan/vulkan_image_linux.cc |  54 ++++++++---
+ 3 files changed, 165 insertions(+), 66 deletions(-)
+
+diff --git a/gpu/vulkan/vulkan_image.cc b/gpu/vulkan/vulkan_image.cc
+index 679d312345..df92ae428a 100644
+--- a/gpu/vulkan/vulkan_image.cc
++++ b/gpu/vulkan/vulkan_image.cc
+@@ -221,86 +221,100 @@ VkMemoryRequirements VulkanImage::GetMemoryRequirements(size_t plane) {
+   return requirements;
+ }
+ 
+-bool VulkanImage::BindMemory(size_t plane,
+-                             std::unique_ptr<VulkanMemory> memory) {
++bool VulkanImage::BindMemory(std::vector<std::unique_ptr<VulkanMemory>>& memory) {
+   DCHECK(device_queue_);
+   DCHECK(image_ != VK_NULL_HANDLE);
+-  DCHECK(plane < plane_count_);
+-  DCHECK(!memories_[plane]);
+ 
+   VkDevice vk_device = device_queue_->GetVulkanDevice();
+ 
+   if (disjoint_planes_) {
+-    VkBindImagePlaneMemoryInfo image_plane_info = {
+-        .sType = VK_STRUCTURE_TYPE_BIND_IMAGE_PLANE_MEMORY_INFO,
+-        .pNext = nullptr,
+-        .planeAspect = to_plane_aspect(plane),
+-    };
+-
+-    VkBindImageMemoryInfoKHR bind_info = {
+-        .sType = VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO,
+-        .pNext = &image_plane_info,
+-        .image = image_,
+-        .memory = memory->device_memory(),
+-        .memoryOffset = 0,
+-    };
++    auto planes = memory.size();
++    std::vector<VkBindImageMemoryInfoKHR> bind_info(planes);
++    std::vector<VkBindImagePlaneMemoryInfo> image_plane_info(planes);
++    size_t plane;
++    for (plane = 0; plane < planes; ++plane) {
++      VLOG(2) << __func__;
++      DCHECK(!memories_[plane]);
++      image_plane_info[plane] = {
++          .sType = VK_STRUCTURE_TYPE_BIND_IMAGE_PLANE_MEMORY_INFO,
++          .pNext = nullptr,
++          .planeAspect = to_plane_aspect(plane),
++      };
++
++      bind_info[plane] = {
++          .sType = VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO,
++          .pNext = &image_plane_info[plane],
++          .image = image_,
++          .memory = memory[plane]->device_memory(),
++          .memoryOffset = 0,
++      };
++    }
+ 
+-    VkResult result = vkBindImageMemory2(vk_device, 1, &bind_info);
++    VkResult result = vkBindImageMemory2(vk_device, planes, bind_info.data());
+     if (result != VK_SUCCESS) {
+-      DLOG(ERROR) << "Failed to bind memory to external VkImage plane= "
++      VLOG(1) << "Failed to bind memory to external VkImage plane= "
+                   << plane << " :" << result;
+       return false;
+     }
+ 
+-    memories_[plane] = std::move(memory);
++    for (plane = 0; plane < planes; ++plane) {
++      memories_[plane] = std::move(memory[plane]);
++    }
+     return true;
+   }
+ 
+-  DCHECK_EQ(plane, 0u);
+   VkResult result = vkBindImageMemory(
+-      vk_device, image_, memory->device_memory(), 0 /* memoryOffset */);
++      vk_device, image_, memory[0]->device_memory(), 0 /* memoryOffset */);
+   if (result != VK_SUCCESS) {
+-    DLOG(ERROR) << "Failed to bind memory to external VkImage plane= " << plane
++    DLOG(ERROR) << "Failed to bind memory to external VkImage plane= " << 0
+                 << " :" << result;
+     return false;
+   }
+ 
+-  memories_[plane] = std::move(memory);
++  memories_[0] = std::move(memory[0]);
+   return true;
+ }
+ 
+ bool VulkanImage::AllocateAndBindMemory(
+-    size_t plane,
+     const VkMemoryRequirements* requirements,
+-    const void* extra_memory_allocation_info) {
++    const std::vector<VkImportMemoryFdInfoKHR>& extra_memory_allocation_info) {
+   DCHECK(device_queue_);
+   DCHECK(image_ != VK_NULL_HANDLE);
+ 
+-  VkMemoryRequirements tmp_requirements;
+-  if (!requirements) {
+-    tmp_requirements = GetMemoryRequirements(plane);
+-    if (!tmp_requirements.memoryTypeBits) {
+-      DLOG(ERROR) << "vkGetImageMemoryRequirements failed";
+-      return false;
++  auto planes = extra_memory_allocation_info.size();
++  std::vector<std::unique_ptr<VulkanMemory>> memory(planes);
++  const VkMemoryRequirements* reqs = requirements;
++  size_t plane;
++  for (plane = 0; plane < planes; ++plane) {
++    VkMemoryRequirements tmp_requirements;
++    if (!requirements) {
++      tmp_requirements = GetMemoryRequirements(plane);
++      if (!tmp_requirements.memoryTypeBits) {
++        VLOG(1) << "vkGetImageMemoryRequirements failed" << tmp_requirements.size << ", alignment = " << tmp_requirements.alignment;
++        break;
++      }
++      reqs = &tmp_requirements;
+     }
+-    requirements = &tmp_requirements;
+-  }
+ 
+-  // Some vulkan implementations require dedicated memory for sharing memory
+-  // object between vulkan instances.
+-  VkMemoryDedicatedAllocateInfoKHR dedicated_memory_info = {
+-      .sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO_KHR,
+-      .pNext = extra_memory_allocation_info,
+-      .image = image_,
+-  };
++    // Some vulkan implementations require dedicated memory for sharing memory
++    // object between vulkan instances.
++    VkMemoryDedicatedAllocateInfoKHR dedicated_memory_info = {
++        .sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO_KHR,
++        .pNext = &extra_memory_allocation_info[plane],
++        .image = image_,
++    };
+ 
+-  auto memory =
+-      VulkanMemory::Create(device_queue_, requirements, &dedicated_memory_info);
+-  if (!memory) {
++    memory[plane] =
++        VulkanMemory::Create(device_queue_, reqs, &dedicated_memory_info);
++    if (!memory[plane]) {
++      break;
++    }
++  }
++  if (plane < planes) {
+     return false;
+   }
+ 
+-  if (!BindMemory(plane, std::move(memory))) {
++  if (!BindMemory(memory)) {
+     return false;
+   }
+ 
+@@ -329,7 +343,62 @@ bool VulkanImage::InitializeSingleOrJointPlanes(
+       break;
+     }
+ 
+-    if (!AllocateAndBindMemory(0, requirements, extra_memory_allocation_info)) {
++    std::vector<VkImportMemoryFdInfoKHR> memory_allocation_info = {
++      *(VkImportMemoryFdInfoKHR *)extra_memory_allocation_info
++    };
++    if (!AllocateAndBindMemory(requirements, memory_allocation_info)) {
++      break;
++    }
++
++    // Get subresource layout for images with VK_IMAGE_TILING_LINEAR.
++    // For images with VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT, the layout is
++    // initialized in InitializeWithExternalMemoryAndModifiers(). For
++    // VK_IMAGE_TILING_OPTIMAL the layout is not usable and
++    // vkGetImageSubresourceLayout() is illegal.
++    if (image_tiling != VK_IMAGE_TILING_LINEAR) {
++      return true;
++    }
++
++    const VkImageSubresource image_subresource = {
++        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
++        .mipLevel = 0,
++        .arrayLayer = 0,
++    };
++    vkGetImageSubresourceLayout(device_queue_->GetVulkanDevice(), image_,
++                                &image_subresource, &layouts_[0]);
++
++    return true;
++  } while (false);
++
++  VLOG(2) << __func__;
++  // Initialize failed.
++  Destroy();
++  return false;
++}
++
++bool VulkanImage::InitializeDisjointPlanes(
++    VulkanDeviceQueue* device_queue,
++    const gfx::Size& size,
++    VkFormat format,
++    VkImageUsageFlags usage,
++    VkImageCreateFlags flags,
++    VkImageTiling image_tiling,
++    const void* extra_image_create_info,
++    const std::vector<VkImportMemoryFdInfoKHR>& extra_memory_allocation_info,
++    const VkMemoryRequirements* requirements) {
++  DCHECK(!device_queue_);
++  DCHECK(image_ == VK_NULL_HANDLE);
++
++  device_queue_ = device_queue;
++  disjoint_planes_ = true;
++
++  do {
++    if (!CreateVkImage(size, format, usage, flags, image_tiling,
++                       extra_image_create_info)) {
++      break;
++    }
++
++    if (!AllocateAndBindMemory(requirements, extra_memory_allocation_info)) {
+       break;
+     }
+ 
+diff --git a/gpu/vulkan/vulkan_image.h b/gpu/vulkan/vulkan_image.h
+index b519dddff2..a897c4956c 100644
+--- a/gpu/vulkan/vulkan_image.h
++++ b/gpu/vulkan/vulkan_image.h
+@@ -166,11 +166,10 @@ class COMPONENT_EXPORT(VULKAN) VulkanImage {
+   // Get memory requirements for the given plane at index.
+   VkMemoryRequirements GetMemoryRequirements(size_t plane);
+   // Bind memory with the given plane of the image.
+-  bool BindMemory(size_t plane, std::unique_ptr<VulkanMemory> memory);
++  bool BindMemory(std::vector<std::unique_ptr<VulkanMemory>>& memory);
+   // Allocate memory and bind to the given plane of the image.
+-  bool AllocateAndBindMemory(size_t plane,
+-                             const VkMemoryRequirements* requirements,
+-                             const void* extra_memory_allocation_info);
++  bool AllocateAndBindMemory(const VkMemoryRequirements* requirements,
++                             const std::vector<VkImportMemoryFdInfoKHR>& extra_memory_allocation_info);
+   // Initialize for single plane or joint planes VkImage
+   bool InitializeSingleOrJointPlanes(VulkanDeviceQueue* device_queue,
+                                      const gfx::Size& size,
+@@ -181,6 +180,15 @@ class COMPONENT_EXPORT(VULKAN) VulkanImage {
+                                      const void* extra_image_create_info,
+                                      const void* extra_memory_allocation_info,
+                                      const VkMemoryRequirements* requirements);
++  bool InitializeDisjointPlanes(VulkanDeviceQueue* device_queue,
++                                const gfx::Size& size,
++                                VkFormat format,
++                                VkImageUsageFlags usage,
++                                VkImageCreateFlags flags,
++                                VkImageTiling image_tiling,
++                                const void* extra_image_create_info,
++                                const std::vector<VkImportMemoryFdInfoKHR>& extra_memory_allocation_info,
++                                const VkMemoryRequirements* requirements);
+   bool InitializeWithExternalMemory(VulkanDeviceQueue* device_queue,
+                                     const gfx::Size& size,
+                                     VkFormat format,
+diff --git a/gpu/vulkan/vulkan_image_linux.cc b/gpu/vulkan/vulkan_image_linux.cc
+index dec506cf35..62ff00bce0 100644
+--- a/gpu/vulkan/vulkan_image_linux.cc
++++ b/gpu/vulkan/vulkan_image_linux.cc
+@@ -46,13 +46,12 @@ bool VulkanImage::InitializeFromGpuMemoryBufferHandle(
+ 
+   queue_family_index_ = queue_family_index;
+   auto& native_pixmap_handle = gmb_handle.native_pixmap_handle;
+-
+-  auto& scoped_fd = native_pixmap_handle.planes[0].fd;
+-  if (!scoped_fd.is_valid()) {
+-    DLOG(ERROR) << "GpuMemoryBufferHandle doesn't have a valid fd.";
+-    return false;
++  if (native_pixmap_handle.planes.size() > 1) {
++    flags |= VK_IMAGE_CREATE_DISJOINT_BIT;
+   }
+ 
++  auto planes = native_pixmap_handle.planes.size();
++
+   bool using_modifier =
+       native_pixmap_handle.modifier != gfx::NativePixmapHandle::kNoModifier &&
+       gfx::HasExtension(device_queue->enabled_extensions(),
+@@ -87,12 +86,24 @@ bool VulkanImage::InitializeFromGpuMemoryBufferHandle(
+     external_image_create_info.pNext = &modifier_info;
+   }
+ 
+-  int memory_fd = scoped_fd.release();
+-  VkImportMemoryFdInfoKHR import_memory_fd_info = {
+-      .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR,
+-      .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
+-      .fd = memory_fd,
+-  };
++  std::vector<VkImportMemoryFdInfoKHR> import_memory_fd_info(planes);
++  for (size_t i = 0; i < planes; ++i) {
++    auto& scoped_fd = native_pixmap_handle.planes[0].fd;
++    if (!scoped_fd.is_valid()) {
++      VLOG(1) << "GpuMemoryBufferHandle doesn't have a valid fd.";
++      return false;
++    }
++  }
++
++  std::vector<int> memory_fd(planes);
++  for (size_t i = 0; i < planes; ++i) {
++    memory_fd[i] = native_pixmap_handle.planes[i].fd.release();
++    import_memory_fd_info[i] = {
++          .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR,
++          .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
++          .fd = memory_fd[i],
++      };
++  }
+ 
+   VkExportMemoryAllocateInfo export_memory_info = {
+       VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO_KHR};
+@@ -106,18 +117,29 @@ bool VulkanImage::InitializeFromGpuMemoryBufferHandle(
+     export_memory_info.handleTypes =
+         external_memory_properties.compatibleHandleTypes;
+ 
+-    import_memory_fd_info.pNext = &export_memory_info;
++    for (size_t i = 0; i < planes; ++i) {
++      import_memory_fd_info[i].pNext = &export_memory_info;
++    }
+   }
+ 
+   VkMemoryRequirements* requirements = nullptr;
+   // TODO support multiple plane
+-  bool result = InitializeSingleOrJointPlanes(
+-      device_queue, size, format, usage, flags, image_tiling,
+-      &external_image_create_info, &import_memory_fd_info, requirements);
++  bool result;
++  if (planes == 1) {
++    result = InitializeSingleOrJointPlanes(
++        device_queue, size, format, usage, flags, image_tiling,
++        &external_image_create_info, &import_memory_fd_info[0], requirements);
++  } else {
++    result = InitializeDisjointPlanes(
++        device_queue, size, format, usage, flags, image_tiling,
++        &external_image_create_info, import_memory_fd_info, requirements);
++  }
+   // If Initialize successfully, the fd in scoped_fd should be owned by vulkan,
+   // otherwise take the ownership of the fd back.
+   if (!result) {
+-    scoped_fd.reset(memory_fd);
++    for (size_t i = 0; i < planes; ++i) {
++      native_pixmap_handle.planes[i].fd.reset(memory_fd[i]);
++    }
+   }
+ 
+   return result;
+-- 
+2.25.1
+

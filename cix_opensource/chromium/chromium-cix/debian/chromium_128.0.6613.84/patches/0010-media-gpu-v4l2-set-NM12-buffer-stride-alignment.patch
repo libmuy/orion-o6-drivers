@@ -1,0 +1,92 @@
+From 6c374a165663ab0a5644040b2c7054742aa644b1 Mon Sep 17 00:00:00 2001
+From: Zhan Lou <zhan.lou@cixtech.com>
+Date: Wed, 23 Oct 2024 11:07:34 +0800
+Subject: [PATCH 10/14] media: gpu: v4l2: set NM12 buffer stride alignment
+
+Set buffer stride to be 64-byte aligned for NM12 format as required by
+CIX P1 GPU.
+
+Signed-off-by: Zhan Lou <zhan.lou@cixtech.com>
+---
+ media/gpu/v4l2/v4l2_queue.cc                  | 33 +++++++++++++++++++
+ media/gpu/v4l2/v4l2_queue.h                   |  3 ++
+ media/gpu/v4l2/v4l2_stateful_video_decoder.cc |  5 +++
+ 3 files changed, 41 insertions(+)
+
+diff --git a/media/gpu/v4l2/v4l2_queue.cc b/media/gpu/v4l2/v4l2_queue.cc
+index 33c5af6432..4be0178ebe 100644
+--- a/media/gpu/v4l2/v4l2_queue.cc
++++ b/media/gpu/v4l2/v4l2_queue.cc
+@@ -1131,6 +1131,39 @@ std::pair<std::optional<struct v4l2_format>, int> V4L2Queue::GetFormat() {
+   return std::make_pair(format, 0);
+ }
+ 
++std::optional<struct v4l2_format> V4L2Queue::SetStrideAlignment(size_t alignment) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  struct v4l2_format format;
++  memset(&format, 0, sizeof(format));
++  format.type = type_;
++  if (ioctl_cb_.Run(VIDIOC_G_FMT, &format) != 0) {
++    RecordVidiocIoctlErrorUMA(VidiocIoctlRequests::kVidiocGFmt);
++    VPQLOGF(2) << "Failed to get format";
++    return std::nullopt;
++  }
++
++  struct v4l2_pix_format_mplane& pix_mp = format.fmt.pix_mp;
++  if (pix_mp.pixelformat != V4L2_PIX_FMT_NV12M &&
++      pix_mp.pixelformat != v4l2_fourcc('M', '0', '1', '0')) {
++    current_format_ = format;
++    return current_format_;
++  }
++
++  for (size_t i = 0; i < pix_mp.num_planes; i++) {
++      struct v4l2_plane_pix_format& plane_fmt = pix_mp.plane_fmt[i];
++      plane_fmt.bytesperline = (plane_fmt.bytesperline + alignment - 1) & (-alignment);
++  }
++
++  if (ioctl_cb_.Run(VIDIOC_S_FMT, &format) != 0) {
++    RecordVidiocIoctlErrorUMA(VidiocIoctlRequests::kVidiocSFmt);
++    VPQLOGF(2) << "Failed to set format";
++    return std::nullopt;
++  }
++
++  current_format_ = format;
++  return current_format_;
++}
++
+ std::optional<gfx::Rect> V4L2Queue::GetVisibleRect() {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+ 
+diff --git a/media/gpu/v4l2/v4l2_queue.h b/media/gpu/v4l2/v4l2_queue.h
+index 4713ea3eeb..cccb66c54d 100644
+--- a/media/gpu/v4l2/v4l2_queue.h
++++ b/media/gpu/v4l2/v4l2_queue.h
+@@ -433,6 +433,9 @@ class MEDIA_GPU_EXPORT V4L2Queue
+   // is one or not.
+   [[nodiscard]] std::pair<std::optional<struct v4l2_format>, int> GetFormat();
+ 
++  // Set stride alignment to codec. Apply to NM12 format only for now.
++  [[nodiscard]] std::optional<struct v4l2_format> SetStrideAlignment(size_t alignment);
++
+   // Codec-specific method to get the visible rectangle of the queue, using the
+   // VIDIOC_G_SELECTION ioctl if available, or VIDIOC_G_CROP as a fallback.
+   [[nodiscard]] std::optional<gfx::Rect> GetVisibleRect();
+diff --git a/media/gpu/v4l2/v4l2_stateful_video_decoder.cc b/media/gpu/v4l2/v4l2_stateful_video_decoder.cc
+index a2cf288cd5..26c8bec4f4 100644
+--- a/media/gpu/v4l2/v4l2_stateful_video_decoder.cc
++++ b/media/gpu/v4l2/v4l2_stateful_video_decoder.cc
+@@ -769,6 +769,11 @@ bool V4L2StatefulVideoDecoder::InitializeCAPTUREQueue() {
+       chosen_fourcc = Fourcc::FromV4L2PixFmt(V4L2_PIX_FMT_QC08C).value();
+     }
+   }
++
++  const auto format_or_error = CAPTURE_queue_->SetStrideAlignment(64);
++  if (format_or_error) {
++    chosen_fourcc = Fourcc::FromV4L2PixFmt(format_or_error->fmt.pix_mp.pixelformat).value();
++  }
+   VLOG(2) << "Chosen |CAPTURE_queue_| format: " << chosen_fourcc.ToString()
+           << " " << chosen_size.ToString() << " (modifier: 0x" << std::hex
+           << chosen_modifier << std::dec << "). Using " << v4l2_num_buffers
+-- 
+2.25.1
+

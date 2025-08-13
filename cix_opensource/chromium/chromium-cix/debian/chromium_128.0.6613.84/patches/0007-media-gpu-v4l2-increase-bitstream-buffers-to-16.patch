@@ -1,0 +1,33 @@
+From fa9588ac87b66439b4523cc03c651bf2647866f0 Mon Sep 17 00:00:00 2001
+From: Zhan Lou <zhan.lou@cixtech.com>
+Date: Sat, 19 Oct 2024 14:20:58 +0800
+Subject: [PATCH 07/14] media: gpu: v4l2: increase bitstream buffers to 16
+
+Increase non-H264 bitstream buffers to 16 to fix random playback stuck
+issue. The old bitstream buffer count 2 is not enough since decoder
+might consume all the buffers before sends SOURCE_CHANGE event. In such
+case, client will not get chance to retrieve the bitstream buffers to
+send more data to decoder. Also, decoder doesn't output frame buffer as
+it doesn't get enough bitstream data, and then got stuck.
+
+Signed-off-by: Zhan Lou <zhan.lou@cixtech.com>
+---
+ media/gpu/v4l2/v4l2_stateful_video_decoder.cc | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/media/gpu/v4l2/v4l2_stateful_video_decoder.cc b/media/gpu/v4l2/v4l2_stateful_video_decoder.cc
+index 70394efa8b..8dc9eeb5c5 100644
+--- a/media/gpu/v4l2/v4l2_stateful_video_decoder.cc
++++ b/media/gpu/v4l2/v4l2_stateful_video_decoder.cc
+@@ -409,7 +409,7 @@ void V4L2StatefulVideoDecoder::Initialize(const VideoDecoderConfig& config,
+   const bool is_h264 =
+       VideoCodecProfileToVideoCodec(config.profile()) == VideoCodec::kH264;
+   constexpr size_t kNumInputBuffersH264 = 16;
+-  constexpr size_t kNumInputBuffersVPx = 2;
++  constexpr size_t kNumInputBuffersVPx = 16;
+   const auto num_input_buffers =
+       is_h264 ? kNumInputBuffersH264 : kNumInputBuffersVPx;
+   if (OUTPUT_queue_->AllocateBuffers(num_input_buffers, V4L2_MEMORY_MMAP,
+-- 
+2.25.1
+

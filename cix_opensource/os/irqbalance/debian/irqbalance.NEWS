@@ -1,0 +1,11 @@
+irqbalance (1.6.0-1) unstable; urgency=medium
+
+  Starting from version 1.6.0-1 the irqbalance service status (as in: enabled
+  or disabled) won't be configurable with debconf. The service will be enabled
+  at install time and configurable using the standard init system tools,
+  almost always systemctl(1) nowadays.
+
+  Likewise, from now on the "oneshot" mode is configurable only by manually
+  editing the /etc/default/irqbalance file, and not via debconf anymore.
+
+ -- Paride Legovini <paride@debian.org>  Thu, 11 Jul 2019 19:57:32 +0200

@@ -1,0 +1,110 @@
+From 6828d486bcf257ca93608c01e9934134ef1ff5b9 Mon Sep 17 00:00:00 2001
+From: Zhan Lou <zhan.lou@cixtech.com>
+Date: Tue, 15 Oct 2024 15:15:07 +0800
+Subject: [PATCH 02/14] media: gpu: v4l2: enable AV1 decoder
+
+Enable V4L2 AV1 decoder and add AV1 profile query.
+
+Signed-off-by: Zhan Lou <zhan.lou@cixtech.com>
+---
+ media/gpu/v4l2/v4l2_utils.cc           | 34 +++++++++++++++++---------
+ media/mojo/mojom/remoting_common.mojom |  1 +
+ 2 files changed, 23 insertions(+), 12 deletions(-)
+
+diff --git a/media/gpu/v4l2/v4l2_utils.cc b/media/gpu/v4l2/v4l2_utils.cc
+index 2ac2a698d2..2081da0b4a 100644
+--- a/media/gpu/v4l2/v4l2_utils.cc
++++ b/media/gpu/v4l2/v4l2_utils.cc
+@@ -46,6 +46,24 @@
+ #define MAKE_V4L2_CODEC_PAIR(codec, suffix) \
+   std::make_pair(codec##_##suffix, codec)
+ 
++/**
++ * enum v4l2_mpeg_video_av1_profile - AV1 profiles
++ *
++ * @V4L2_MPEG_VIDEO_AV1_PROFILE_MAIN: compliant decoders must be able to decode
++ * streams with seq_profile equal to 0.
++ * @V4L2_MPEG_VIDEO_AV1_PROFILE_HIGH: compliant decoders must be able to decode
++ * streams with seq_profile equal less than or equal to 1.
++ * @V4L2_MPEG_VIDEO_AV1_PROFILE_PROFESSIONAL: compliant decoders must be able to
++ * decode streams with seq_profile less than or equal to 2.
++ *
++ * Conveys the highest profile a decoder can work with.
++ */
++enum v4l2_mpeg_video_av1_profile {
++	V4L2_MPEG_VIDEO_AV1_PROFILE_MAIN = 0,
++	V4L2_MPEG_VIDEO_AV1_PROFILE_HIGH = 1,
++	V4L2_MPEG_VIDEO_AV1_PROFILE_PROFESSIONAL = 2,
++};
++
+ namespace {
+ int HandledIoctl(int fd, int request, void* arg) {
+   return HANDLE_EINTR(ioctl(fd, request, arg));
+@@ -193,8 +211,7 @@ VideoCodecProfile V4L2ProfileToVideoCodecProfile(uint32_t v4l2_codec,
+       }
+       break;
+ #endif
+-#if BUILDFLAG(IS_CHROMEOS)
+-    case V4L2_CID_MPEG_VIDEO_AV1_PROFILE:
++    case V4L2_CTRL_CLASS_MPEG + 0x2000:
+       switch (v4l2_profile) {
+         case V4L2_MPEG_VIDEO_AV1_PROFILE_MAIN:
+           return AV1PROFILE_PROFILE_MAIN;
+@@ -204,7 +221,6 @@ VideoCodecProfile V4L2ProfileToVideoCodecProfile(uint32_t v4l2_codec,
+           return AV1PROFILE_PROFILE_PRO;
+       }
+       break;
+-#endif
+   }
+   return VIDEO_CODEC_PROFILE_UNKNOWN;
+ }
+@@ -326,10 +342,8 @@ static const std::map<v4l2_enum_type, v4l2_enum_type>
+         {V4L2_PIX_FMT_VP8_FRAME, V4L2_CID_MPEG_VIDEO_VP8_PROFILE},
+         {V4L2_PIX_FMT_VP9, V4L2_CID_MPEG_VIDEO_VP9_PROFILE},
+         {V4L2_PIX_FMT_VP9_FRAME, V4L2_CID_MPEG_VIDEO_VP9_PROFILE},
+-#if BUILDFLAG(IS_CHROMEOS)
+-        {V4L2_PIX_FMT_AV1, V4L2_CID_MPEG_VIDEO_AV1_PROFILE},
+-        {V4L2_PIX_FMT_AV1_FRAME, V4L2_CID_MPEG_VIDEO_AV1_PROFILE},
+-#endif
++        {V4L2_PIX_FMT_AV1, V4L2_CTRL_CLASS_MPEG + 0x2000},
++        {V4L2_PIX_FMT_AV1_FRAME, V4L2_CTRL_CLASS_MPEG + 0x2000},
+ };
+ 
+ // Default VideoCodecProfiles associated to a V4L2 Codec Control ID.
+@@ -347,9 +361,7 @@ static const std::map<v4l2_enum_type, std::vector<VideoCodecProfile>>
+ #endif  // BUILDFLAG(ENABLE_HEVC_PARSER_AND_HW_DECODER)
+         {V4L2_CID_MPEG_VIDEO_VP8_PROFILE, {VP8PROFILE_ANY}},
+         {V4L2_CID_MPEG_VIDEO_VP9_PROFILE, {VP9PROFILE_PROFILE0}},
+-#if BUILDFLAG(IS_CHROMEOS)
+-        {V4L2_CID_MPEG_VIDEO_AV1_PROFILE, {AV1PROFILE_PROFILE_MAIN}},
+-#endif
++        {V4L2_CTRL_CLASS_MPEG + 0x2000, {AV1PROFILE_PROFILE_MAIN}},
+ };
+ 
+ // Correspondence from a VideoCodecProfiles to V4L2 codec described
+@@ -367,10 +379,8 @@ static const std::map<VideoCodecProfile,
+         {VP8PROFILE_ANY, MAKE_V4L2_CODEC_PAIR(V4L2_PIX_FMT_VP8, FRAME)},
+         {VP9PROFILE_PROFILE0, MAKE_V4L2_CODEC_PAIR(V4L2_PIX_FMT_VP9, FRAME)},
+         {VP9PROFILE_PROFILE2, MAKE_V4L2_CODEC_PAIR(V4L2_PIX_FMT_VP9, FRAME)},
+-#if BUILDFLAG(IS_CHROMEOS)
+         {AV1PROFILE_PROFILE_MAIN,
+          MAKE_V4L2_CODEC_PAIR(V4L2_PIX_FMT_AV1, FRAME)},
+-#endif
+ };
+ 
+ }  // namespace
+diff --git a/media/mojo/mojom/remoting_common.mojom b/media/mojo/mojom/remoting_common.mojom
+index 1fb7c40550..063af13373 100644
+--- a/media/mojo/mojom/remoting_common.mojom
++++ b/media/mojo/mojom/remoting_common.mojom
+@@ -42,6 +42,7 @@ enum RemotingSinkVideoCapability {
+   CODEC_VP8,
+   CODEC_VP9,
+   CODEC_HEVC,
++  CODEC_AV1,
+ };
+ 
+ struct RemotingSinkMetadata {
+-- 
+2.25.1
+

@@ -1,0 +1,25 @@
+#!/usr/bin/make -f
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+# These configure/build flags can be modified by a vendor-specific
+# Makefile snippet. See debian/vendors/100ubuntu.mk for an example.
+dhflags = --with runit
+confflags = --with-systemd
+
+# Incude vendor specific configuration. The vendor files have to be created
+# so their order respects the taxonomy of the downstream distributions.
+include debian/vendors/*.mk
+
+%:
+	dh $@ $(dhflags)
+
+override_dh_auto_configure:
+	dh_auto_configure -- $(confflags)
+
+override_dh_install:
+	dh_install
+
+	# Treat '/path/to/irqbalance.env' in the upstream service file as a
+	# template and substitute it, rather than handling it with a patch.
+	sed -i 's|/path/to/irqbalance.env|/etc/default/irqbalance|' $(CURDIR)/debian/irqbalance/lib/systemd/system/irqbalance.service

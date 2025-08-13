@@ -1,0 +1,63 @@
+From c1cd1f41f091961debe4a1a63b44a6be27a5abc9 Mon Sep 17 00:00:00 2001
+From: Zhan Lou <zhan.lou@cixtech.com>
+Date: Mon, 21 Oct 2024 15:27:52 +0800
+Subject: [PATCH 06/14] media: gpu: v4l2: rename video decode device
+
+Let this cusotmized chromium open cix specific video decode device
+/dev/video-cixdec0, so it won't impact other browsers like firefox and
+debian's default chromium, which can try software decoding if
+/dev/video-dec0 doesn't exist.
+
+Signed-off-by: Zhan Lou <zhan.lou@cixtech.com>
+---
+ media/gpu/v4l2/v4l2_stateful_video_decoder.cc | 4 ++--
+ media/gpu/v4l2/v4l2_utils.cc                  | 4 ++--
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/media/gpu/v4l2/v4l2_stateful_video_decoder.cc b/media/gpu/v4l2/v4l2_stateful_video_decoder.cc
+index 50aade6c7c..70394efa8b 100644
+--- a/media/gpu/v4l2/v4l2_stateful_video_decoder.cc
++++ b/media/gpu/v4l2/v4l2_stateful_video_decoder.cc
+@@ -316,7 +316,7 @@ void V4L2StatefulVideoDecoder::Initialize(const VideoDecoderConfig& config,
+   }
+ 
+   if (!device_fd_.is_valid()) {
+-    constexpr char kVideoDeviceDriverPath[] = "/dev/video-dec0";
++    constexpr char kVideoDeviceDriverPath[] = "/dev/video-cixdec0";
+     device_fd_.reset(HANDLE_EINTR(
+         open(kVideoDeviceDriverPath, O_RDWR | O_NONBLOCK | O_CLOEXEC)));
+     if (!device_fd_.is_valid()) {
+@@ -1185,7 +1185,7 @@ int V4L2StatefulVideoDecoder::GetMaxNumDecoderInstances() {
+   if (!base::FeatureList::IsEnabled(media::kLimitConcurrentDecoderInstances)) {
+     return std::numeric_limits<int>::max();
+   }
+-  constexpr char kVideoDeviceDriverPath[] = "/dev/video-dec0";
++  constexpr char kVideoDeviceDriverPath[] = "/dev/video-cixdec0";
+   base::ScopedFD device_fd(HANDLE_EINTR(
+       open(kVideoDeviceDriverPath, O_RDWR | O_NONBLOCK | O_CLOEXEC)));
+   if (!device_fd.is_valid()) {
+diff --git a/media/gpu/v4l2/v4l2_utils.cc b/media/gpu/v4l2/v4l2_utils.cc
+index f89341d6c4..44ef33b32f 100644
+--- a/media/gpu/v4l2/v4l2_utils.cc
++++ b/media/gpu/v4l2/v4l2_utils.cc
+@@ -512,7 +512,7 @@ struct timeval TimeDeltaToTimeVal(base::TimeDelta time_delta) {
+ std::optional<SupportedVideoDecoderConfigs> GetSupportedV4L2DecoderConfigs() {
+   SupportedVideoDecoderConfigs supported_media_configs;
+ 
+-  constexpr char kVideoDeviceDriverPath[] = "/dev/video-dec0";
++  constexpr char kVideoDeviceDriverPath[] = "/dev/video-cixdec0";
+   base::ScopedFD device_fd(HANDLE_EINTR(
+       open(kVideoDeviceDriverPath, O_RDWR | O_NONBLOCK | O_CLOEXEC)));
+   if (!device_fd.is_valid()) {
+@@ -558,7 +558,7 @@ std::optional<SupportedVideoDecoderConfigs> GetSupportedV4L2DecoderConfigs() {
+ }
+ 
+ bool IsV4L2DecoderStateful() {
+-  constexpr char kVideoDeviceDriverPath[] = "/dev/video-dec0";
++  constexpr char kVideoDeviceDriverPath[] = "/dev/video-cixdec0";
+   base::ScopedFD device_fd(HANDLE_EINTR(
+       open(kVideoDeviceDriverPath, O_RDWR | O_NONBLOCK | O_CLOEXEC)));
+   if (!device_fd.is_valid()) {
+-- 
+2.25.1
+

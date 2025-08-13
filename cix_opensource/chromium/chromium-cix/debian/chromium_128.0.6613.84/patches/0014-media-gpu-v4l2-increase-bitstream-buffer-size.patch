@@ -1,0 +1,43 @@
+From be4f13711f3b219536c6eeef1ef515cd4c3bf4f7 Mon Sep 17 00:00:00 2001
+From: Zhan Lou <zhan.lou@cixtech.com>
+Date: Mon, 9 Dec 2024 10:28:58 +0800
+Subject: [PATCH 14/14] media: gpu: v4l2: increase bitstream buffer size
+
+Increase bitstream buffer size for big reoslution video decoding. For
+AV1 and VP9, since super-frame has multiple frame in one buffer, double
+the buffer size.
+
+Signed-off-by: Zhan Lou <zhan.lou@cixtech.com>
+---
+ media/gpu/v4l2/v4l2_stateful_video_decoder.cc | 13 +++++++++----
+ 1 file changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/media/gpu/v4l2/v4l2_stateful_video_decoder.cc b/media/gpu/v4l2/v4l2_stateful_video_decoder.cc
+index 26c8bec4f4..01229ea5fa 100644
+--- a/media/gpu/v4l2/v4l2_stateful_video_decoder.cc
++++ b/media/gpu/v4l2/v4l2_stateful_video_decoder.cc
+@@ -394,12 +394,17 @@ void V4L2StatefulVideoDecoder::Initialize(const VideoDecoderConfig& config,
+ 
+   // Allocate larger |OUTPUT_queue_| buffers for resolutions above 1080p.
+   // TODO(hnt): Investigate ways to reduce this size.
+-  constexpr size_t kMiB = 1024 * 1024;
+   constexpr int kFullHDNumPixels = 1920 * 1080;
+-  const size_t kInputBufferInMBs =
+-      (config.coded_size().GetArea() <= kFullHDNumPixels) ? 2 : 4;
++  const size_t kNumPixels = config.coded_size().GetArea();
++  const bool is_av1 =
++      VideoCodecProfileToVideoCodec(config.profile()) == VideoCodec::kAV1;
++  const bool is_vp9 =
++      VideoCodecProfileToVideoCodec(config.profile()) == VideoCodec::kVP9;
++  const size_t kInputBufferSize =
++      (kNumPixels <= kFullHDNumPixels) ? (2 * 1024 * 1024):
++      (is_av1 || is_vp9) ? (kNumPixels * 2) : kNumPixels;
+   const auto v4l2_format = OUTPUT_queue_->SetFormat(
+-      profile_as_v4l2_fourcc, gfx::Size(), kInputBufferInMBs * kMiB);
++      profile_as_v4l2_fourcc, gfx::Size(), kInputBufferSize);
+   if (!v4l2_format) {
+     std::move(init_cb).Run(DecoderStatus::Codes::kFailedToCreateDecoder);
+     return;
+-- 
+2.25.1
+

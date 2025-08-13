@@ -1,0 +1,5 @@
+#!/usr/bin/dh-exec
+misc/irqbalance.env => /etc/default/irqbalance
+misc/irqbalance.service /lib/systemd/system/irqbalance.service.ori
+cix/irqbalance.service /lib/systemd/system
+cix/policy.sh /etc/irqbalance

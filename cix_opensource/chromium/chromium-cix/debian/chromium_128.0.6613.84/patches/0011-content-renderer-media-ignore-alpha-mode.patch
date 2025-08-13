@@ -1,0 +1,37 @@
+From 48af7c3676e512f31d6160e2a75985fb2d3cf09f Mon Sep 17 00:00:00 2001
+From: Zhan Lou <zhan.lou@cixtech.com>
+Date: Wed, 23 Oct 2024 11:40:37 +0800
+Subject: [PATCH 11/14] content: renderer: media: ignore alpha mode
+
+Ignore alpha mode to let V4L2 decoder try to handle video bitstream even
+if alpha mode is set.
+
+Signed-off-by: Zhan Lou <zhan.lou@cixtech.com>
+---
+ .../media/gpu/gpu_video_accelerator_factories_impl.cc  | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/content/renderer/media/gpu/gpu_video_accelerator_factories_impl.cc b/content/renderer/media/gpu/gpu_video_accelerator_factories_impl.cc
+index a4735498fe..0a472a564e 100644
+--- a/content/renderer/media/gpu/gpu_video_accelerator_factories_impl.cc
++++ b/content/renderer/media/gpu/gpu_video_accelerator_factories_impl.cc
+@@ -214,11 +214,11 @@ GpuVideoAcceleratorFactoriesImpl::IsDecoderConfigSupported(
+   // There is no support for alpha channel hardware decoding yet.
+   // HEVC is the codec that only has platform hardware decoder support, and
+   // macOS currently support HEVC with alpha, so don't block HEVC here.
+-  if (config.alpha_mode() == media::VideoDecoderConfig::AlphaMode::kHasAlpha &&
+-      config.codec() != media::VideoCodec::kHEVC) {
+-    DVLOG(1) << "Alpha transparency formats are not supported.";
+-    return Supported::kFalse;
+-  }
++  // if (config.alpha_mode() == media::VideoDecoderConfig::AlphaMode::kHasAlpha &&
++  //     config.codec() != media::VideoCodec::kHEVC) {
++  //   DVLOG(1) << "Alpha transparency formats are not supported.";
++  //   return Supported::kFalse;
++  // }
+ 
+   auto supported_decoder_configs =
+       codec_factory_->GetSupportedVideoDecoderConfigs();
+-- 
+2.25.1
+

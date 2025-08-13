@@ -1,0 +1,36 @@
+From efe1992702bcd4b0eaf3c0a707a531b29aca8579 Mon Sep 17 00:00:00 2001
+From: Zhan Lou <zhan.lou@cixtech.com>
+Date: Tue, 12 Nov 2024 09:52:45 +0800
+Subject: [PATCH 12/14] media: gpu: chromeos: fix v4l2 frame pool issue
+
+When V4L2 decode is used, main_frame_pool_ will be reset in
+VideoDecoderPipeline::PickDecoderOutputFormat(). Then if
+VideoDecoderPipeline::InitializeTask() is called again when resolution
+change, CHECK(main_frame_pool_) will be failed, and V4L2 decode
+selection will not be used.
+
+Since V4L2 decoder doesn't use main_frame_pool_, just skip setting
+'get_original_frame_cb' for frame converter.
+
+Signed-off-by: Zhan Lou <zhan.lou@cixtech.com>
+---
+ media/gpu/chromeos/video_decoder_pipeline.cc | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/media/gpu/chromeos/video_decoder_pipeline.cc b/media/gpu/chromeos/video_decoder_pipeline.cc
+index a92b0a297e..866e10fa4e 100644
+--- a/media/gpu/chromeos/video_decoder_pipeline.cc
++++ b/media/gpu/chromeos/video_decoder_pipeline.cc
+@@ -646,8 +646,7 @@ void VideoDecoderPipeline::InitializeTask(const VideoDecoderConfig& config,
+       get_original_frame_cb = base::BindRepeating(
+           &OOPVideoDecoder::GetOriginalFrame,
+           base::Unretained(static_cast<OOPVideoDecoder*>(decoder_.get())));
+-    } else {
+-      CHECK(main_frame_pool_);
++    } else if (main_frame_pool_) {
+       PlatformVideoFramePool* platform_video_frame_pool =
+           main_frame_pool_->AsPlatformVideoFramePool();
+       // The only |frame_converter_| that needs the GetOriginalFrameCB callback
+-- 
+2.25.1
+

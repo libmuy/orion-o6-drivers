@@ -1,0 +1,51 @@
+From 4cd1b897d3cb9d31c616a541cf99c3eee9a0370f Mon Sep 17 00:00:00 2001
+From: Zhan Lou <zhan.lou@cixtech.com>
+Date: Tue, 15 Oct 2024 14:51:46 +0800
+Subject: [PATCH 01/14] media: gpu: v4l2: poll POLLOUT events before source
+ change
+
+Driver could return output port buffer before sending SOURCE_CHANGE
+event.
+
+Signed-off-by: Zhan Lou <zhan.lou@cixtech.com>
+---
+ media/gpu/v4l2/v4l2_stateful_video_decoder.cc | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/media/gpu/v4l2/v4l2_stateful_video_decoder.cc b/media/gpu/v4l2/v4l2_stateful_video_decoder.cc
+index f1bb5de325..9d736dfac4 100644
+--- a/media/gpu/v4l2/v4l2_stateful_video_decoder.cc
++++ b/media/gpu/v4l2/v4l2_stateful_video_decoder.cc
+@@ -61,6 +61,7 @@ void WaitOnceForEvents(int device_fd,
+                        base::OnceClosure dequeue_callback,
+                        base::OnceClosure resolution_change_callback) {
+   VLOGF(5) << "Going to poll()";
++  static bool src_change_received = false;
+ 
+   // POLLERR, POLLHUP, or POLLNVAL are always return-able and anyway ignored
+   // when set in pollfd.events.
+@@ -68,6 +69,9 @@ void WaitOnceForEvents(int device_fd,
+   struct pollfd pollfds[] = {{.fd = device_fd, .events = POLLIN | POLLPRI},
+                              {.fd = wake_event, .events = POLLIN}};
+   constexpr int kInfiniteTimeout = -1;
++  if (!src_change_received)
++    pollfds[0].events |= POLLOUT;
++repeat:
+   if (HANDLE_EINTR(poll(pollfds, std::size(pollfds), kInfiniteTimeout)) <
+       kIoctlOk) {
+     PLOG(ERROR) << "Poll()ing for events failed";
+@@ -107,6 +111,11 @@ void WaitOnceForEvents(int device_fd,
+     }
+     return;
+   }
++
++  if (events_from_device & POLLOUT) {
++    goto repeat;
++  }
++
+   if (other_events & POLLIN) {
+     // Somebody woke us up because they didn't want us waiting on |device_fd|.
+     // Do nothing.
+-- 
+2.25.1
+

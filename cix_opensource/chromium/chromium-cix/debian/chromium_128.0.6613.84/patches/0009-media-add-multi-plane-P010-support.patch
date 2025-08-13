@@ -1,0 +1,111 @@
+From 9d557727f4470aa633e495d9d74e934f8ec92db0 Mon Sep 17 00:00:00 2001
+From: Zhan Lou <zhan.lou@cixtech.com>
+Date: Mon, 21 Oct 2024 09:28:05 +0800
+Subject: [PATCH 09/14] media: add multi-plane P010 support
+
+Signed-off-by: Zhan Lou <zhan.lou@cixtech.com>
+---
+ media/gpu/chromeos/fourcc.cc                       | 12 +++++++++++-
+ media/gpu/chromeos/fourcc.h                        |  1 +
+ media/mojo/services/gpu_mojo_media_client_linux.cc |  1 +
+ 3 files changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/media/gpu/chromeos/fourcc.cc b/media/gpu/chromeos/fourcc.cc
+index 5b7444a7b6..cbc845358f 100644
+--- a/media/gpu/chromeos/fourcc.cc
++++ b/media/gpu/chromeos/fourcc.cc
+@@ -14,6 +14,8 @@
+ #include <va/va.h>
+ #endif  // BUILDFLAG(USE_VAAPI)
+ 
++#define V4L2_PIX_FMT_P010M           v4l2_fourcc('M', '0', '1', '0')
++
+ namespace media {
+ 
+ // static
+@@ -33,6 +35,7 @@ std::optional<Fourcc> Fourcc::FromUint32(uint32_t fourcc) {
+     case MT21:
+     case MM21:
+     case P010:
++    case M010:
+     case MT2T:
+     case AR24:
+     case Q08C:
+@@ -114,6 +117,8 @@ std::optional<Fourcc> Fourcc::FromVideoPixelFormat(
+         return Fourcc(YM16);
+       case PIXEL_FORMAT_NV21:
+         return Fourcc(NM21);
++      case PIXEL_FORMAT_P010LE:
++        return Fourcc(M010);
+       case PIXEL_FORMAT_UYVY:
+         NOTREACHED_IN_MIGRATION();
+         [[fallthrough]];
+@@ -141,7 +146,6 @@ std::optional<Fourcc> Fourcc::FromVideoPixelFormat(
+       case PIXEL_FORMAT_Y16:
+       case PIXEL_FORMAT_ABGR:
+       case PIXEL_FORMAT_XBGR:
+-      case PIXEL_FORMAT_P010LE:
+       case PIXEL_FORMAT_XR30:
+       case PIXEL_FORMAT_XB30:
+       case PIXEL_FORMAT_BGRA:
+@@ -194,6 +198,8 @@ VideoPixelFormat Fourcc::ToVideoPixelFormat() const {
+       return PIXEL_FORMAT_NV12;
+     case P010:
+       return PIXEL_FORMAT_P010LE;
++    case M010:
++      return PIXEL_FORMAT_P010LE;
+     case MT2T:
+       return PIXEL_FORMAT_P010LE;
+     case AR24:
+@@ -310,6 +316,8 @@ std::optional<Fourcc> Fourcc::ToSinglePlanar() const {
+       return Fourcc(NV12);
+     case NM21:
+       return Fourcc(NV21);
++    case M010:
++      return Fourcc(P010);
+     case YU16:
+     case YM16:
+       return Fourcc(YU16);
+@@ -345,6 +353,7 @@ bool Fourcc::IsMultiPlanar() const {
+     case NM12:
+     case NM21:
+     case YM16:
++    case M010:
+     case MT21:
+     case MM21:
+       return true;
+@@ -371,6 +380,7 @@ static_assert(Fourcc::MM21 == V4L2_PIX_FMT_MM21, "Mismatch Fourcc");
+ static_assert(Fourcc::MT21 == V4L2_PIX_FMT_MT21C, "Mismatch Fourcc");
+ static_assert(Fourcc::AR24 == V4L2_PIX_FMT_ABGR32, "Mismatch Fourcc");
+ static_assert(Fourcc::P010 == V4L2_PIX_FMT_P010, "Mismatch Fourcc");
++static_assert(Fourcc::M010 == V4L2_PIX_FMT_P010M, "Mismatch Fourcc");
+ // MT2T has not been upstreamed yet
+ #ifdef V4L2_PIX_FMT_MT2T
+ static_assert(Fourcc::MT2T == V4L2_PIX_FMT_MT2T, "Mismatch Fourcc");
+diff --git a/media/gpu/chromeos/fourcc.h b/media/gpu/chromeos/fourcc.h
+index 6f08dba1de..590d77237e 100644
+--- a/media/gpu/chromeos/fourcc.h
++++ b/media/gpu/chromeos/fourcc.h
+@@ -93,6 +93,7 @@ class MEDIA_GPU_EXPORT Fourcc {
+     // Two-plane 10-bit YUV 4:2:0. Each sample is a two-byte little-endian value
+     // with the bottom six bits ignored.
+     P010 = ComposeFourcc('P', '0', '1', '0'),
++    M010 = ComposeFourcc('M', '0', '1', '0'),
+ 
+     // Two-plane Mediatek variant of P010. See
+     // https://tinyurl.com/mtk-10bit-video-format for details.
+diff --git a/media/mojo/services/gpu_mojo_media_client_linux.cc b/media/mojo/services/gpu_mojo_media_client_linux.cc
+index fe810ac9b9..a5c1390e96 100644
+--- a/media/mojo/services/gpu_mojo_media_client_linux.cc
++++ b/media/mojo/services/gpu_mojo_media_client_linux.cc
+@@ -55,6 +55,7 @@ std::vector<Fourcc> GetPreferredRenderableFourccs(
+   if (gpu_preferences.gr_context_type == gpu::GrContextType::kVulkan ||
+       gpu_preferences.gr_context_type == gpu::GrContextType::kGL) {
+     renderable_fourccs.emplace_back(Fourcc::NV12);
++    renderable_fourccs.emplace_back(Fourcc::P010);
+   }
+ 
+   // Support 1-copy argb textures.
+-- 
+2.25.1
+

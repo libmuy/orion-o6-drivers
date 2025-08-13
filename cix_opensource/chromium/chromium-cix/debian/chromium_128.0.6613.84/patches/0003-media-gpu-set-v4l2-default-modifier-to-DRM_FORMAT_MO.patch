@@ -1,0 +1,73 @@
+From e664b0798f9de9b9bafdb46018748782600ef354 Mon Sep 17 00:00:00 2001
+From: Zhan Lou <zhan.lou@cixtech.com>
+Date: Tue, 15 Oct 2024 15:56:20 +0800
+Subject: [PATCH 03/14] media: gpu: set v4l2 default modifier to
+ DRM_FORMAT_MOD_LINEAR
+
+Set V4L2 default modifier to DRM_FORMAT_MOD_LINEAR which is required by
+vulkan renderer.
+
+Signed-off-by: Zhan Lou <zhan.lou@cixtech.com>
+---
+ media/gpu/chromeos/native_pixmap_frame_resource.cc | 2 +-
+ media/gpu/v4l2/v4l2_stateful_video_decoder.cc      | 2 +-
+ media/gpu/v4l2/v4l2_utils.cc                       | 2 +-
+ media/remoting/renderer_controller.cc              | 3 +++
+ 4 files changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/media/gpu/chromeos/native_pixmap_frame_resource.cc b/media/gpu/chromeos/native_pixmap_frame_resource.cc
+index fa89d6414f..fc390c02d2 100644
+--- a/media/gpu/chromeos/native_pixmap_frame_resource.cc
++++ b/media/gpu/chromeos/native_pixmap_frame_resource.cc
+@@ -133,7 +133,7 @@ scoped_refptr<NativePixmapFrameResource> NativePixmapFrameResource::Create(
+ 
+   // This is only ever called with V4L2-allocated buffers, so |layout.modifier|
+   // is expected to be kNoModifier.
+-  CHECK_EQ(layout.modifier(), gfx::NativePixmapHandle::kNoModifier);
++  // CHECK_EQ(layout.modifier(), gfx::NativePixmapHandle::kNoModifier);
+   handle.modifier = layout.modifier();
+ 
+   // Note: |buffer_usage| is not set. As a result, the constructed
+diff --git a/media/gpu/v4l2/v4l2_stateful_video_decoder.cc b/media/gpu/v4l2/v4l2_stateful_video_decoder.cc
+index 9d736dfac4..50aade6c7c 100644
+--- a/media/gpu/v4l2/v4l2_stateful_video_decoder.cc
++++ b/media/gpu/v4l2/v4l2_stateful_video_decoder.cc
+@@ -818,7 +818,7 @@ V4L2StatefulVideoDecoder::EnumeratePixelLayoutCandidates(
+     // bit depth and let Chrome's display pipeline decide what to do.
+ 
+     candidates.emplace_back(ImageProcessor::PixelLayoutCandidate{
+-        .fourcc = *candidate_fourcc, .size = coded_size});
++        .fourcc = *candidate_fourcc, .size = coded_size, .modifier = 0});
+     VLOG(2) << "CAPTURE queue candidate format: "
+             << candidate_fourcc->ToString() << ", " << coded_size.ToString();
+   }
+diff --git a/media/gpu/v4l2/v4l2_utils.cc b/media/gpu/v4l2/v4l2_utils.cc
+index 2081da0b4a..f89341d6c4 100644
+--- a/media/gpu/v4l2/v4l2_utils.cc
++++ b/media/gpu/v4l2/v4l2_utils.cc
+@@ -323,7 +323,7 @@ std::optional<VideoFrameLayout> V4L2FormatToVideoFrameLayout(
+   } else {
+     return VideoFrameLayout::CreateMultiPlanar(
+         video_format, gfx::Size(pix_mp.width, pix_mp.height), std::move(planes),
+-        buffer_alignment);
++        buffer_alignment, 0);
+   }
+ }
+ 
+diff --git a/media/remoting/renderer_controller.cc b/media/remoting/renderer_controller.cc
+index 5b0d3b09bd..3408cef936 100644
+--- a/media/remoting/renderer_controller.cc
++++ b/media/remoting/renderer_controller.cc
+@@ -412,6 +412,9 @@ RemotingCompatibility RendererController::GetVideoCompatibility() const {
+     case VideoCodec::kHEVC:
+       compatible = HasVideoCapability(RemotingSinkVideoCapability::CODEC_HEVC);
+       break;
++    case VideoCodec::kAV1:
++      compatible = HasVideoCapability(RemotingSinkVideoCapability::CODEC_AV1);
++      break;
+     default:
+       VLOG(2) << "Remoting does not support video codec: "
+               << pipeline_metadata_.video_decoder_config.codec();
+-- 
+2.25.1
+

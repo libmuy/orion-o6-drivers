@@ -1,0 +1,37 @@
+From d274a8725d3ab7c2ff2d4c263017f443ad92794d Mon Sep 17 00:00:00 2001
+From: Zhan Lou <zhan.lou@cixtech.com>
+Date: Sat, 19 Oct 2024 14:27:47 +0800
+Subject: [PATCH 08/14] media: gpu: v4l2: enable HEVC decoder
+
+V4L2 decoder has HEVC support. So enable it by removing the 'unsupported
+HEVC' branch in V4L2StatefulVideoDecoder::Decode().
+
+Signed-off-by: Zhan Lou <zhan.lou@cixtech.com>
+---
+ media/gpu/v4l2/v4l2_stateful_video_decoder.cc | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/media/gpu/v4l2/v4l2_stateful_video_decoder.cc b/media/gpu/v4l2/v4l2_stateful_video_decoder.cc
+index 8dc9eeb5c5..a2cf288cd5 100644
+--- a/media/gpu/v4l2/v4l2_stateful_video_decoder.cc
++++ b/media/gpu/v4l2/v4l2_stateful_video_decoder.cc
+@@ -506,11 +506,11 @@ void V4L2StatefulVideoDecoder::Decode(scoped_refptr<DecoderBuffer> buffer,
+       decoder_buffer_and_callbacks_.push(std::move(a));
+     }
+ 
+-  } else if (VideoCodecProfileToVideoCodec(config_.profile()) ==
+-             VideoCodec::kHEVC) {
+-    NOTIMPLEMENTED();
+-    std::move(decode_cb).Run(DecoderStatus::Codes::kUnsupportedCodec);
+-    return;
++  // } else if (VideoCodecProfileToVideoCodec(config_.profile()) ==
++  //            VideoCodec::kHEVC) {
++  //   NOTIMPLEMENTED();
++  //   std::move(decode_cb).Run(DecoderStatus::Codes::kUnsupportedCodec);
++  //   return;
+   } else {
+     decoder_buffer_and_callbacks_.emplace(std::move(buffer),
+                                           std::move(decode_cb));
+-- 
+2.25.1
+

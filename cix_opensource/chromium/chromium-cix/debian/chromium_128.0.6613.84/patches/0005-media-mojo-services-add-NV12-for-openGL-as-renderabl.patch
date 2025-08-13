@@ -1,0 +1,36 @@
+From bfafbae7b3318ebffa90542180b644e7b8de3f52 Mon Sep 17 00:00:00 2001
+From: Zhan Lou <zhan.lou@cixtech.com>
+Date: Tue, 15 Oct 2024 16:45:12 +0800
+Subject: [PATCH 05/14] media: mojo: services: add NV12 for openGL as
+ renderable format
+
+V4L2 decoder outputs image in NV12 format. So add NV12 to openGL
+renderable format list to playback video.
+
+Signed-off-by: Zhan Lou <zhan.lou@cixtech.com>
+---
+ media/mojo/services/gpu_mojo_media_client_linux.cc | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/media/mojo/services/gpu_mojo_media_client_linux.cc b/media/mojo/services/gpu_mojo_media_client_linux.cc
+index c9d3f2d1c0..fe810ac9b9 100644
+--- a/media/mojo/services/gpu_mojo_media_client_linux.cc
++++ b/media/mojo/services/gpu_mojo_media_client_linux.cc
+@@ -51,12 +51,11 @@ std::vector<Fourcc> GetPreferredRenderableFourccs(
+   // (P010 -> NV12) and OpenGL path (P010 -> AR24). While this VPP introduces a
+   // loss of color depth, it should be optimized for zero-copy path in the
+   // future.
+-#if BUILDFLAG(ENABLE_VULKAN)
+   // Support for zero-copy NV12 textures preferentially.
+-  if (gpu_preferences.gr_context_type == gpu::GrContextType::kVulkan) {
++  if (gpu_preferences.gr_context_type == gpu::GrContextType::kVulkan ||
++      gpu_preferences.gr_context_type == gpu::GrContextType::kGL) {
+     renderable_fourccs.emplace_back(Fourcc::NV12);
+   }
+-#endif  // BUILDFLAG(ENABLE_VULKAN)
+ 
+   // Support 1-copy argb textures.
+   renderable_fourccs.emplace_back(Fourcc::AR24);
+-- 
+2.25.1
+

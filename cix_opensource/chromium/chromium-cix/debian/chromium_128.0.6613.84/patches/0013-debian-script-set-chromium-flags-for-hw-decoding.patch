@@ -1,0 +1,31 @@
+From ff75d5a79f53da94ae98d823f8e762ae9e9b304c Mon Sep 17 00:00:00 2001
+From: Zhan Lou <zhan.lou@cixtech.com>
+Date: Tue, 12 Nov 2024 15:04:05 +0800
+Subject: [PATCH 13/14] debian: script: set chromium flags for hw decoding
+
+Set following two flags in the chromium script to enable HW decoding
+  1. --ozone-platform-hint=wayland
+  2. --use-v4l2-flat-stateful-video-decoder=enable
+
+Signed-off-by: Zhan Lou <zhan.lou@cixtech.com>
+---
+ debian/scripts/chromium | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/debian/scripts/chromium b/debian/scripts/chromium
+index 679d99bbcf..53bde88e39 100644
+--- a/debian/scripts/chromium
++++ b/debian/scripts/chromium
+@@ -123,6 +123,9 @@ if [ -z "$(echo $CHROMIUM_FLAGS | grep \\-\\-enable-remote-extensions)" ]; then
+   export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --disable-extensions-except=$(echo $CHROMIUM_FLAGS | tr ' ' \\n | grep \\-\\-load-extension | cut -d= -f2 | tr \\n ,)"
+ fi
+ 
++# Set ozone platform to wayland and enable v4l2 stateful video decoder
++export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --ozone-platform-hint=wayland --use-v4l2-flat-stateful-video-decoder=enable"
++
+ if [ $want_temp_profile -eq 1 ] ; then
+   TEMP_PROFILE=`mktemp -d`
+   echo "Using temporary profile: $TEMP_PROFILE"
+-- 
+2.25.1
+
